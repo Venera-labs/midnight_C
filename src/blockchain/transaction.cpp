@@ -171,6 +171,15 @@ namespace midnight::blockchain
         midnight::g_logger->debug(msg.str());
     }
 
+    void Transaction::set_fee(uint64_t fee)
+    {
+        fee_ = fee;
+
+        std::ostringstream msg;
+        msg << "Set fee: " << fee << " basic units";
+        midnight::g_logger->debug(msg.str());
+    }
+
     std::string Transaction::calculate_hash() const
     {
         // Hash the canonical transaction body (excluding mutable/display tx_id).
@@ -178,6 +187,7 @@ namespace midnight::blockchain
         body["encoding"] = "midnight-tx-v1";
         body["invalidBefore"] = invalid_before_;
         body["invalidHereafter"] = invalid_hereafter_;
+        body["fee"] = fee_;
 
         nlohmann::json inputs = nlohmann::json::array();
         for (const auto &input : inputs_)
@@ -250,6 +260,7 @@ namespace midnight::blockchain
         nlohmann::json tx_json = nlohmann::json::object();
         tx_json["encoding"] = "midnight-tx-v1";
         tx_json["txId"] = tx_id_;
+        tx_json["fee"] = fee_;
         tx_json["invalidBefore"] = invalid_before_;
         tx_json["invalidHereafter"] = invalid_hereafter_;
 
@@ -331,6 +342,7 @@ namespace midnight::blockchain
         Transaction tx(tx_json.value("txId", ""));
         tx.invalid_before_ = tx_json.value("invalidBefore", 0ULL);
         tx.invalid_hereafter_ = tx_json.value("invalidHereafter", 0ULL);
+        tx.fee_ = tx_json.value("fee", 0ULL);
 
         if (tx_json.contains("inputs") && tx_json["inputs"].is_array())
         {

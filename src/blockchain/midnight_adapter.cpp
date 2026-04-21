@@ -339,7 +339,7 @@ namespace midnight::blockchain
         try
         {
             // Create RPC client for node communication
-            rpc_ = std::make_unique<midnight::network::MidnightNodeRPC>(node_url, 5000);
+            rpc_ = std::make_unique<midnight::network::MidnightNodeRPC>(node_url, protocol_params_.rpc_timeout_ms);
 
             // Verify node is ready
             if (!rpc_->is_ready())
@@ -414,21 +414,44 @@ namespace midnight::blockchain
             return result;
         }
 
-        midnight::g_logger->debug("Building Midnight transaction");
+        midnight::g_logger->debug("Building Midnight transaction (native CBOR)");
 
+        // 1. Calculate total input value from UTXOs
         uint64_t total_input = 0;
         for (const auto &utxo : utxos)
         {
             total_input += utxo.amount;
         }
 
+        // 2. Calculate total output value
         uint64_t total_output = 0;
         for (const auto &output : outputs)
         {
             total_output += output.second;
         }
 
-        uint64_t fee = calculate_min_fee(256); // Estimate fee
+        // 3. Build Transaction object with real inputs and outputs
+        Transaction tx;
+
+        for (const auto &utxo : utxos)
+        {
+            Transaction::Input input;
+            input.tx_hash = utxo.tx_hash;
+            input.output_index = utxo.output_index;
+            tx.add_input(input);
+        }
+
+        for (const auto &[addr, amt] : outputs)
+        {
+            Transaction::Output output;
+            output.address = addr;
+            output.amount = amt;
+            tx.add_output(output);
+        }
+
+        // 4. Iterative fee estimation (two-pass for accuracy)
+        //    First pass: estimate with preliminary size
+        uint64_t fee = calculate_min_fee(tx.get_size());
 
         if (total_input < total_output + fee)
         {
@@ -436,14 +459,123 @@ namespace midnight::blockchain
             return result;
         }
 
-        // Build transaction representation
+        // 5. Calculate and add change output
+        uint64_t change = total_input - total_output - fee;
+        if (change > 0)
+        {
+            Transaction::Output change_output;
+            change_output.address = change_address;
+            change_output.amount = change;
+            tx.add_output(change_output);
+        }
+
+        // 6. Set validity interval from chain tip
+        if (connected_ && rpc_)
+        {
+            try
+            {
+                auto tip = rpc_->get_chain_tip();
+                // TTL = current slot + 200 slots (~400 seconds on Midnight)
+                tx.set_validity(tip.first + 200, 0);
+            }
+            catch (const std::exception &e)
+            {
+                midnight::g_logger->debug(
+                    std::string("Could not fetch chain tip for TTL, using fallback: ") + e.what());
+                tx.set_validity(999999999, 0);
+            }
+        }
+        else
+        {
+            tx.set_validity(999999999, 0);
+        }
+
+        // 7. Second-pass fee with final transaction size (including change output)
+        uint64_t final_fee = calculate_min_fee(tx.get_size());
+        if (final_fee > fee)
+        {
+            // Fee increased due to larger tx; adjust change if possible
+            uint64_t fee_diff = final_fee - fee;
+            if (change >= fee_diff)
+            {
+                change -= fee_diff;
+                fee = final_fee;
+                // Update the last output (change) with adjusted amount
+                if (change > 0)
+                {
+                    // Rebuild the transaction with adjusted change
+                    Transaction tx_final;
+                    for (const auto &input : tx.get_inputs())
+                    {
+                        tx_final.add_input(input);
+                    }
+
+                    const auto &orig_outputs = tx.get_outputs();
+                    for (size_t i = 0; i + 1 < orig_outputs.size(); ++i)
+                    {
+                        tx_final.add_output(orig_outputs[i]);
+                    }
+
+                    Transaction::Output adjusted_change;
+                    adjusted_change.address = change_address;
+                    adjusted_change.amount = change;
+                    tx_final.add_output(adjusted_change);
+
+                    tx_final.set_validity(tx.get_size() > 0 ? 999999999 : 0, 0);
+                    // Preserve the validity from the original tx
+                    if (connected_ && rpc_)
+                    {
+                        try
+                        {
+                            auto tip = rpc_->get_chain_tip();
+                            tx_final.set_validity(tip.first + 200, 0);
+                        }
+                        catch (...)
+                        {
+                            tx_final.set_validity(999999999, 0);
+                        }
+                    }
+                    else
+                    {
+                        tx_final.set_validity(999999999, 0);
+                    }
+
+                    tx_final.set_fee(fee);
+
+                    result.success = true;
+                    result.result = tx_final.to_cbor_hex();
+
+                    std::ostringstream build_msg;
+                    build_msg << "Transaction built (CBOR): "
+                              << tx_final.get_inputs().size() << " inputs, "
+                              << tx_final.get_outputs().size() << " outputs, "
+                              << "fee=" << fee << ", change=" << change
+                              << ", size=" << tx_final.get_size() << " bytes";
+                    midnight::g_logger->info(build_msg.str());
+
+                    return result;
+                }
+            }
+            else
+            {
+                result.error_message = "Insufficient funds after fee recalculation";
+                return result;
+            }
+        }
+
+        // 8. Set fee and serialize to CBOR hex
+        tx.set_fee(fee);
+
         result.success = true;
-        result.result = "tx_" + std::to_string(utxos.size()) + "_" + std::to_string(outputs.size());
+        result.result = tx.to_cbor_hex();
 
         std::ostringstream build_msg;
-        build_msg << "Transaction built with " << utxos.size() << " inputs and "
-                  << outputs.size() << " outputs";
-        midnight::g_logger->debug(build_msg.str());
+        build_msg << "Transaction built (CBOR): "
+                  << tx.get_inputs().size() << " inputs, "
+                  << tx.get_outputs().size() << " outputs, "
+                  << "fee=" << fee << ", change=" << change
+                  << ", size=" << tx.get_size() << " bytes";
+        midnight::g_logger->info(build_msg.str());
 
         return result;
     }

@@ -79,6 +79,7 @@ if(ENABLE_BLOCKCHAIN)
         blockchain/wallet_manager.cpp
         blockchain/official_sdk_bridge.cpp
         blockchain/midnight_adapter.cpp
+        blockchain/native_wallet_ops.cpp
         utxo-transactions/utxo_transactions.cpp
         compact-contracts/compact_contracts.cpp
         zk-proofs/zk_proofs.cpp
@@ -208,6 +209,18 @@ target_link_libraries(midnight-core
         $<$<PLATFORM_ID:Windows>:bcrypt>
         $<$<PLATFORM_ID:Windows>:iphlpapi>
 )
+
+# macOS frameworks required by cpp-httplib TLS (system certificate loading)
+if(APPLE)
+    find_library(SECURITY_FRAMEWORK Security)
+    find_library(COREFOUNDATION_FRAMEWORK CoreFoundation)
+    if(SECURITY_FRAMEWORK AND COREFOUNDATION_FRAMEWORK)
+        target_link_libraries(midnight-core PRIVATE
+            ${SECURITY_FRAMEWORK}
+            ${COREFOUNDATION_FRAMEWORK}
+        )
+    endif()
+endif()
 
 target_compile_definitions(midnight-core
     PRIVATE

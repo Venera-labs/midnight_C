@@ -70,6 +70,18 @@ namespace midnight::blockchain
         void add_certificate(const Certificate &cert);
 
         /**
+         * @brief Set transaction fee
+         * @param fee Fee amount in basic units
+         */
+        void set_fee(uint64_t fee);
+
+        /**
+         * @brief Get transaction fee
+         * @return Fee amount in basic units
+         */
+        uint64_t get_fee() const { return fee_; }
+
+        /**
          * @brief Set validity interval (block numbers)
          */
         void set_validity(uint64_t invalid_hereafter, uint64_t invalid_before = 0);
@@ -135,6 +147,7 @@ namespace midnight::blockchain
         std::vector<Input> inputs_;
         std::vector<Output> outputs_;
         std::vector<Certificate> certificates_;
+        uint64_t fee_ = 0;
         uint64_t invalid_hereafter_ = 0;
         uint64_t invalid_before_ = 0;
     };

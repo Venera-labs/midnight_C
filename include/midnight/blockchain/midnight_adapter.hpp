@@ -31,15 +31,16 @@ namespace midnight::blockchain
      */
     struct ProtocolParams
     {
-        uint64_t min_fee_a;           // Minimum fee coefficient A
-        uint64_t min_fee_b;           // Minimum fee coefficient B
-        uint64_t price_memory;        // Memory price per unit
-        uint64_t price_steps;         // CPU steps price per unit
-        uint64_t utxo_cost_per_byte;  // Cost per byte of UTXO
-        uint32_t max_tx_size;         // Maximum transaction size
-        uint32_t max_block_size;      // Maximum block size
-        uint64_t min_pool_cost;       // Minimum pool cost
-        uint32_t coins_per_utxo_word; // UTxO entry cost
+        uint64_t min_fee_a = 0;           // Minimum fee coefficient A
+        uint64_t min_fee_b = 0;           // Minimum fee coefficient B
+        uint64_t price_memory = 0;        // Memory price per unit
+        uint64_t price_steps = 0;         // CPU steps price per unit
+        uint64_t utxo_cost_per_byte = 0;  // Cost per byte of UTXO
+        uint32_t max_tx_size = 0;         // Maximum transaction size
+        uint32_t max_block_size = 0;      // Maximum block size
+        uint64_t min_pool_cost = 0;       // Minimum pool cost
+        uint32_t coins_per_utxo_word = 0; // UTxO entry cost
+        uint32_t rpc_timeout_ms = 5000;   // RPC timeout in milliseconds (configurable for IoT)
     };
 
     /**
